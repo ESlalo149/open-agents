@@ -72,4 +72,82 @@ describe('OpenCode event bridge', () => {
     });
     expect(store.size).toBe(1);
   });
+
+  it('links a child session to its parent and marks the parent as team lead', () => {
+    const store = new AgentStateStore();
+    const runtime = new AgentRuntime(store);
+    runtimes.push(runtime);
+    const messages: Record<string, unknown>[] = [];
+    store.on('broadcast', (message) => messages.push(message));
+
+    runtime.handleOpenCodeEvent({
+      source: 'opencode',
+      type: 'session.created',
+      data: { sessionID: 'oc-parent' },
+    });
+    const parent = [...store.values()][0]!;
+
+    runtime.handleOpenCodeEvent({
+      source: 'opencode',
+      type: 'session.created',
+      data: { sessionID: 'oc-child', parentID: 'oc-parent', title: 'Reviewer' },
+    });
+    const child = [...store.values()].find((agent) => agent.sessionId === 'oc-child')!;
+
+    expect(child.leadAgentId).toBe(parent.id);
+    expect(child.agentName).toBe('Reviewer');
+    expect(parent.isTeamLead).toBe(true);
+    expect(messages).toContainEqual(
+      expect.objectContaining({ type: 'agentTeamInfo', id: parent.id, isTeamLead: true }),
+    );
+  });
+
+  it('removes children with a deleted parent and unmarks a parent after its last child', () => {
+    const store = new AgentStateStore();
+    const runtime = new AgentRuntime(store);
+    runtimes.push(runtime);
+    const messages: Record<string, unknown>[] = [];
+    store.on('broadcast', (message) => messages.push(message));
+
+    runtime.handleOpenCodeEvent({
+      source: 'opencode',
+      type: 'session.created',
+      data: { sessionID: 'oc-parent-cleanup' },
+    });
+    const parent = [...store.values()][0]!;
+    runtime.handleOpenCodeEvent({
+      source: 'opencode',
+      type: 'session.created',
+      data: { sessionID: 'oc-child-cleanup', parentID: 'oc-parent-cleanup' },
+    });
+    const child = [...store.values()].find((agent) => agent.sessionId === 'oc-child-cleanup')!;
+
+    runtime.handleOpenCodeEvent({
+      source: 'opencode',
+      type: 'session.deleted',
+      data: { sessionID: 'oc-child-cleanup' },
+    });
+    expect(store.get(parent.id)?.isTeamLead).toBe(false);
+    expect(store.get(child.id)).toBeUndefined();
+    expect(messages).toContainEqual(
+      expect.objectContaining({ type: 'agentTeamInfo', id: parent.id, isTeamLead: false }),
+    );
+
+    runtime.handleOpenCodeEvent({
+      source: 'opencode',
+      type: 'session.created',
+      data: { sessionID: 'oc-child-cleanup-2', parentID: 'oc-parent-cleanup' },
+    });
+    const secondChild = [...store.values()].find(
+      (agent) => agent.sessionId === 'oc-child-cleanup-2',
+    )!;
+    runtime.handleOpenCodeEvent({
+      source: 'opencode',
+      type: 'session.archived',
+      data: { sessionID: 'oc-parent-cleanup' },
+    });
+
+    expect(store.size).toBe(0);
+    expect(store.get(secondChild.id)).toBeUndefined();
+  });
 });

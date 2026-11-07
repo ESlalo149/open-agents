@@ -18,6 +18,32 @@ OpenCode remains responsible for creating, running, and responding to sessions.
 Pixel Agents is an observational office: it does not launch sessions, embed a
 terminal, install OpenCode hooks, or change OpenCode configuration.
 
+## Subagents
+
+OpenCode 2.2.6 supports reusable agents in `primary`, `subagent`, or `all`
+mode. This repository provides project-local subagents in `.opencode/agents/`:
+
+- `reviewer`: read-only review of current changes.
+- `test-runner`: runs requested project checks without editing code.
+- `opencode-compat`: checks integration assumptions against OpenCode 2.2.6.
+
+Ask the primary agent to use one by name, for example:
+
+```text
+Use the reviewer subagent to review the current changes.
+```
+
+OpenCode starts subagents in child sessions. The `session.created` event carries
+the child's `parentID`; the Pixel Agents bridge uses it to display the child as
+a teammate next to the parent. When a parent session is deleted or archived,
+its child characters are removed as well. Built-in `explore` and `general`
+subagents are also available in OpenCode without project definitions.
+
+Agent files can specify their own permissions. The parent agent's `subagent`
+permission controls which agents it may launch; the child then runs under its
+own permissions. These project definitions do not change global OpenCode
+configuration.
+
 ## Run from a development checkout
 
 In one terminal:

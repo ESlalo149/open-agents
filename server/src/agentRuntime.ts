@@ -162,8 +162,24 @@ export class AgentRuntime {
   removeAgent(id: number): void {
     const agent = this.store.get(id);
     if (!agent) return;
+    if (agent.isTeamLead) {
+      for (const [childId, child] of this.store.entries()) {
+        if (child.leadAgentId === id) this.removeAgent(childId);
+      }
+    }
     this.store.delete(id);
     this.store.persist();
+
+    if (agent.leadAgentId !== undefined) {
+      const parent = this.store.get(agent.leadAgentId);
+      const hasChildren = [...this.store.values()].some(
+        (candidate) => candidate.leadAgentId === agent.leadAgentId,
+      );
+      if (parent && !hasChildren && parent.isTeamLead) {
+        parent.isTeamLead = false;
+        this.store.broadcast({ type: 'agentTeamInfo', id: parent.id, isTeamLead: false });
+      }
+    }
   }
 
   dispose(): void {}
