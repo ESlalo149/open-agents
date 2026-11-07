@@ -1,0 +1,78 @@
+#!/bin/sh
+set -e
+
+# Gitleaks pre-commit hook
+# Scans staged files for secrets before allowing commit
+
+echo "🔒 Scanning staged files for secrets..."
+
+# GUI clients (including some terminal/desktop apps) may start Git with a
+# minimal PATH that omits Homebrew. Add its standard locations before checking.
+for gitleaks_dir in /opt/homebrew/bin /usr/local/bin; do
+  if [ -x "$gitleaks_dir/gitleaks" ]; then
+    PATH="$gitleaks_dir:$PATH"
+  fi
+done
+
+# Node version managers commonly install npm outside the GUI client's PATH.
+if [ -n "${NVM_BIN:-}" ] && [ -x "$NVM_BIN/npm" ]; then
+  PATH="$NVM_BIN:$PATH"
+fi
+if [ -n "${VOLTA_HOME:-}" ] && [ -x "$VOLTA_HOME/bin/npm" ]; then
+  PATH="$VOLTA_HOME/bin:$PATH"
+fi
+if [ -n "${ASDF_DATA_DIR:-}" ] && [ -x "$ASDF_DATA_DIR/shims/npm" ]; then
+  PATH="$ASDF_DATA_DIR/shims:$PATH"
+fi
+if [ -n "${PNPM_HOME:-}" ] && [ -x "$PNPM_HOME/npm" ]; then
+  PATH="$PNPM_HOME:$PATH"
+fi
+
+# If a GUI-launched commit has no manager variables, look for the active nvm
+# installation used by this project on macOS.
+if ! command -v npm > /dev/null 2>&1 && [ -d "$HOME/.nvm/versions/node" ]; then
+  for node_bin in "$HOME"/.nvm/versions/node/*/bin; do
+    if [ -x "$node_bin/npm" ]; then
+      PATH="$node_bin:$PATH"
+      break
+    fi
+  done
+fi
+export PATH
+
+if ! command -v gitleaks > /dev/null 2>&1; then
+  echo ""
+  echo "❌ gitleaks is not installed!"
+  echo ""
+  echo "Install gitleaks to enable secret scanning:"
+  echo "  macOS:   brew install gitleaks"
+  echo "  Windows: scoop install gitleaks"
+  echo "  Linux:   See https://github.com/gitleaks/gitleaks#installing"
+  echo ""
+  echo "Secret scanning is REQUIRED to prevent credential leaks."
+  echo "Commit blocked until gitleaks is installed."
+  echo ""
+  exit 1
+fi
+
+# Run gitleaks on staged files only
+gitleaks protect --staged --verbose
+
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "❌ Secret(s) detected in staged files!"
+  echo ""
+  echo "To fix:"
+  echo "  1. Remove the secret from the file"
+  echo "  2. Use environment variables instead: \${SECRET_NAME}"
+  echo "  3. Add to .env.local (which is in .gitignore)"
+  echo ""
+  echo "If this is a false positive, update .gitleaks.toml allowlist"
+  echo ""
+  exit 1
+fi
+
+echo "✅ No secrets detected"
+
+echo "🎨 Formatting staged files..."
+npm exec -- lint-staged

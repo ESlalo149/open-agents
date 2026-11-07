@@ -1,0 +1,46 @@
+#!/bin/sh
+set -e
+
+# GUI clients can launch Git without the Node/npm paths from the interactive
+# shell. Restore common Homebrew and version-manager locations for the hook.
+for node_dir in /opt/homebrew/bin /usr/local/bin; do
+  if [ -x "$node_dir/npm" ]; then
+    PATH="$node_dir:$PATH"
+  fi
+done
+if [ -n "${NVM_BIN:-}" ] && [ -x "$NVM_BIN/npm" ]; then
+  PATH="$NVM_BIN:$PATH"
+fi
+if [ -n "${VOLTA_HOME:-}" ] && [ -x "$VOLTA_HOME/bin/npm" ]; then
+  PATH="$VOLTA_HOME/bin:$PATH"
+fi
+if [ -n "${ASDF_DATA_DIR:-}" ] && [ -x "$ASDF_DATA_DIR/shims/npm" ]; then
+  PATH="$ASDF_DATA_DIR/shims:$PATH"
+fi
+if [ -n "${PNPM_HOME:-}" ] && [ -x "$PNPM_HOME/npm" ]; then
+  PATH="$PNPM_HOME:$PATH"
+fi
+if ! command -v npm > /dev/null 2>&1 && [ -d "$HOME/.nvm/versions/node" ]; then
+  for node_bin in "$HOME"/.nvm/versions/node/*/bin; do
+    if [ -x "$node_bin/npm" ]; then
+      PATH="$node_bin:$PATH"
+      break
+    fi
+  done
+fi
+export PATH
+
+echo "🔍 Type-checking..."
+npm run check-types
+
+# Catch generated-file drift locally instead of only in CI. Regenerate the
+# AsyncAPI bindings, then fail if they differ from what's committed. On drift
+# the generated file is left regenerated
+# in the working tree -- just commit them and push again.
+echo "🔍 Checking generated-file drift (AsyncAPI bindings)..."
+npm run asyncapi:generate
+if ! git diff --exit-code core/src/messages.ts; then
+  echo "❌ Generated AsyncAPI types were out of date and have been regenerated above."
+  echo "   Commit core/src/messages.ts, then push again."
+  exit 1
+fi
