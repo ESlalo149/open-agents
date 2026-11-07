@@ -21,17 +21,24 @@ terminal, install OpenCode hooks, or change OpenCode configuration.
 ## Subagents
 
 OpenCode 2.2.6 supports reusable agents in `primary`, `subagent`, or `all`
-mode. This repository provides project-local subagents in `.opencode/agents/`:
+mode. This repository provides four project-local subagents in `.opencode/agents/`:
 
-- `reviewer`: read-only review of current changes.
-- `test-runner`: runs requested project checks without editing code.
-- `opencode-compat`: checks integration assumptions against OpenCode 2.2.6.
+- `architect`: analyzes design, dependencies, and risks; returns a plan without editing.
+- `designer`: reviews UI/UX, accessibility, and responsive behavior without editing.
+- `developer`: implements a clearly scoped task and focused tests.
+- `qa`: independently runs relevant checks and reports findings without editing.
 
 Ask the primary agent to use one by name, for example:
 
 ```text
-Use the reviewer subagent to review the current changes.
+Use the qa subagent to validate the current changes without editing files.
 ```
+
+For a feature, delegate in stages when the work benefits from it: ask `architect`
+for a plan, optionally ask `designer` to assess UI work, have the primary agent
+orchestrate implementation (or delegate a bounded task to `developer`), then
+ask `qa` to validate the resulting diff. These are optional specialists, not a
+mandatory pipeline; use only the agents that add value to the task.
 
 OpenCode starts subagents in child sessions. The `session.created` event carries
 the child's `parentID`; the Pixel Agents bridge uses it to display the child as
@@ -41,8 +48,9 @@ subagents are also available in OpenCode without project definitions.
 
 Agent files can specify their own permissions. The parent agent's `subagent`
 permission controls which agents it may launch; the child then runs under its
-own permissions. These project definitions do not change global OpenCode
-configuration.
+own permissions. `architect`, `designer`, and `qa` are read-only by policy;
+`developer` can edit files but is instructed to stay within its delegated scope.
+These project definitions do not change global OpenCode configuration.
 
 ## Run from a development checkout
 
