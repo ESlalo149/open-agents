@@ -1,4 +1,3 @@
-import { TERMINAL_SIDEBAR_WIDTH_PX } from '../constants.js';
 import type { AgentAppearance, TabStatus } from './AgentCard.js';
 import { AgentCard } from './AgentCard.js';
 import { cardVariant } from './cardBar.js';
@@ -8,7 +7,6 @@ interface AgentCardBarProps {
   agentIds: number[];
   /** The agent whose terminal pane is showing (standalone). Its card gets the
    *  accent border. */
-  activeAgentId?: number | null;
   /** The agent whose character is selected in the office. Its card gets the
    *  active background; `activeAgentId` wins when both name the same agent. */
   focusedAgentId?: number | null;
@@ -35,7 +33,6 @@ interface AgentCardBarProps {
  */
 export function AgentCardBar({
   agentIds,
-  activeAgentId = null,
   focusedAgentId = null,
   getAppearance,
   statusFor,
@@ -45,15 +42,12 @@ export function AgentCardBar({
   if (agentIds.length === 0) return null;
 
   return (
-    <div
-      className="relative z-30 h-full shrink-0 flex flex-col items-center gap-4 pt-4 overflow-y-auto pointer-events-none"
-      style={{ width: TERMINAL_SIDEBAR_WIDTH_PX, marginLeft: -TERMINAL_SIDEBAR_WIDTH_PX }}
-    >
+    <div className="absolute right-0 top-0 z-30 h-full flex flex-col items-center gap-4 pt-4 overflow-y-auto pointer-events-none">
       {agentIds.map((agentId) => (
         <AgentCard
           key={agentId}
           agentId={agentId}
-          variant={cardVariant(agentId, { activeId: activeAgentId, focusedId: focusedAgentId })}
+          variant={cardVariant(agentId, { activeId: null, focusedId: focusedAgentId })}
           appearance={getAppearance(agentId)}
           status={statusFor(agentId)}
           onSelect={onSelect}

@@ -1,5 +1,4 @@
 import type { AgentStateStore } from './agentStateStore.js';
-import { hasPromotedBackgroundAgent } from './teamUtils.js';
 
 /**
  * Replay an agent's active state to a connecting client.
@@ -27,7 +26,6 @@ export function resendAgentActivity(
         agentName: agent.agentName,
         isTeamLead: agent.isTeamLead,
         leadAgentId: agent.leadAgentId,
-        teamUsesTmux: agent.teamUsesTmux,
       });
     }
 
@@ -46,11 +44,8 @@ export function resendAgentActivity(
       });
     }
 
-    // 3. Background tools with runInBackground flag. Skip promoted spawns to prevent
-    // ghost Subtask characters alongside the real teammate character.
+    // 3. Background tools.
     for (const toolId of agent.backgroundAgentToolIds) {
-      if (hasPromotedBackgroundAgent(id, toolId, store)) continue;
-
       const status = agent.activeToolStatuses.get(toolId);
       if (!status) continue;
 
@@ -62,7 +57,6 @@ export function resendAgentActivity(
         status,
         toolName,
         runInBackground: true,
-        isTeammateSpawn: agent.teammateSpawnToolIds?.has(toolId) || undefined,
       });
     }
 

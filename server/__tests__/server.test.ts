@@ -125,6 +125,34 @@ describe('PixelAgentsServer', () => {
     expect(received[0].event.hook_event_name).toBe('Stop');
   });
 
+  it('OpenCode event endpoint requires auth and forwards valid envelopes', async () => {
+    const config = await server.start();
+    const received: Record<string, unknown>[] = [];
+    server.onOpenCodeEvent((event) => received.push(event));
+
+    const endpoint = `http://127.0.0.1:${config.port}/api/opencode/events`;
+    const body = JSON.stringify({
+      source: 'opencode',
+      type: 'session.created',
+      properties: { info: { id: 'oc-1', directory: '/workspace' } },
+    });
+    const unauthorized = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+    });
+    expect(unauthorized.status).toBe(401);
+
+    const accepted = await fetch(endpoint, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${config.token}`, 'content-type': 'application/json' },
+      body,
+    });
+    expect(accepted.status).toBe(200);
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({ source: 'opencode', type: 'session.created' });
+  });
+
   // 6. Hook endpoint rejects oversized body
   it('hook endpoint returns 413 for oversized body', async () => {
     const config = await server.start();

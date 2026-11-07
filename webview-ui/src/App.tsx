@@ -8,27 +8,15 @@ import { ConnectionIndicator } from './components/ConnectionIndicator.js';
 import { DebugView } from './components/DebugView.js';
 import { DirectoryModal } from './components/DirectoryModal.js';
 import { EditActionBar } from './components/EditActionBar.js';
-import { IntroBubble } from './components/IntroBubble.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
 import { SettingsModal } from './components/SettingsModal.js';
-import { TerminalDrawer } from './components/TerminalDrawer.js';
-import { Tooltip } from './components/Tooltip.js';
-import { Button } from './components/ui/Button.js';
-import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
 import { ZoomControls } from './components/ZoomControls.js';
 import { OFFICE_CANVAS_TEST_ID } from './constants.js';
 import { useDirectoryEditor } from './hooks/useDirectoryEditor.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
-import type { Directory } from './hooks/useExtensionMessages.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
-import { useIntroTour } from './hooks/useIntroTour.js';
-import { useIsMobile } from './hooks/useIsMobile.js';
-import { useKeyboardViewport } from './hooks/useKeyboardViewport.js';
-import { useTerminalDrawer } from './hooks/useTerminalDrawer.js';
-import { MobileShell } from './mobile/MobileShell.js';
-import { useMobileShell } from './mobile/useMobileShell.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
@@ -84,8 +72,6 @@ function App() {
     selectedAgent,
     agentTools,
     agentStatuses,
-    agentAwaitingInput,
-    agentSeenActivity,
     subagentTools,
     subagentCharacters,
     layoutReady,
@@ -104,12 +90,6 @@ function App() {
     alwaysShowLabels,
     ghostHeadlessAgents,
     setGhostHeadlessAgents,
-    hooksEnabled,
-    hooksInstalled,
-    hooksStatusSeq,
-    hooksInfoShown,
-    consentRequest,
-    dismissConsentRequest,
     areaMappings,
     setAreaMappings,
     showAreas,
@@ -119,9 +99,6 @@ function App() {
     showHostDirectories,
     setShowHostDirectories,
     officeReadOnly,
-    terminalAvailable,
-    terminalUnavailableReason,
-    terminalAgentIds,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
 
   // Show migration notice once layout reset is detected
@@ -130,49 +107,15 @@ function App() {
 
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isHooksInfoOpen, setIsHooksInfoOpen] = useState(false);
-  const [hooksTooltipDismissed, setHooksTooltipDismissed] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
   const [alwaysShowOverlay, setAlwaysShowOverlay] = useState(false);
 
-  // Mobile shell (phones, touch tablets): office and terminal as sliding
-  // full-screen pages with the cards in a bottom bar. Desktop keeps the
-  // right-docked drawer.
-  const isMobile = useIsMobile();
-  // Software keyboard: whether it is up (the key bar shows), and the height
-  // to clamp the shell to so the terminal shrinks (and the PTY resizes)
-  // instead of hiding its input line under the keys (iOS only — Android
-  // resizes the layout viewport itself).
-  const keyboard = useKeyboardViewport(isMobile);
   // The office's imperative character selection, mirrored into React so the
   // card bars can restyle the focused agent's card on canvas taps.
   const focusedAgentId = useSyncExternalStore(
     useCallback((onChange: () => void) => getOfficeState().subscribeSelection(onChange), []),
     () => getOfficeState().selectedAgentId,
   );
-
-  // Standalone only: every input here stays false/empty under VS Code. Owns the
-  // active tab on both shells; the desktop-only bits (isOpen, width, resize)
-  // are simply unread on mobile, where the sliding track plays the drawer.
-  const terminalDrawer = useTerminalDrawer({
-    terminalAgentIds,
-    getOfficeState,
-    agentTools,
-    agentStatuses,
-    agentAwaitingInput,
-    agentSeenActivity,
-  });
-
-  const launchIntoDirectory = useCallback((directory: Directory) => {
-    transport.send({ type: 'launchAgent', directoryPath: directory.path });
-  }, []);
-  const mobileShell = useMobileShell({
-    getOfficeState,
-    terminalAgentIds,
-    drawer: terminalDrawer,
-    focusedAgentId,
-    launchAgent: launchIntoDirectory,
-  });
 
   const currentMajorMinor = toMajorMinor(extensionVersion);
 
@@ -219,21 +162,6 @@ function App() {
   const handleSelectAgent = useCallback((id: number) => {
     transport.send({ type: 'focusAgent', id });
   }, []);
-
-  // The Intro's wire-facing state machine — which asks survive being mooted,
-  // when a hooksStatus is this tour's install verdict — lives in useIntroTour
-  // (pure reducer in introTourState.ts); the App only wires it to the bubble.
-  const {
-    intro,
-    installFailed,
-    installPending,
-    onChoice: handleConsentChoice,
-    onClose: handleIntroClose,
-  } = useIntroTour({ consentRequest, hooksInstalled, hooksStatusSeq, dismissConsentRequest });
-
-  // The Settings surface renders one provider today; its checkbox binds to
-  // the Claude row of the per-provider install-state map.
-  const claudeHooksInstalled = hooksInstalled['claude'] === true;
 
   // Mutate Directory→Area mappings locally + send to server. Updates OfficeState in
   // the same tick so a follow-up agentCreated picks up the new mapping.
@@ -332,34 +260,6 @@ function App() {
     transport.send({ type: 'closeAgent', id });
   }, []);
 
-  const { reveal: revealTerminal } = terminalDrawer;
-  const { showTerminal: showMobileTerminal } = mobileShell;
-  const handleClick = useCallback(
-    (agentId: number) => {
-      // If clicked agent is a sub-agent, focus the parent's terminal instead
-      const os = getOfficeState();
-      const focusId = os.terminalOwnerOf(agentId);
-      transport.send({ type: 'focusAgent', id: focusId });
-      // Standalone: focusAgent is a no-op server-side (there's no editor to
-      // raise a panel in), so focus is resolved here — reveal the agent's tab
-      // (desktop drawer) and slide to the terminal page (mobile). A Teammate
-      // without a terminal of its own runs in its Lead's, so it reveals that
-      // one (VS Code resolves the same way server-side).
-      const leadId = os.characters.get(focusId)?.leadAgentId;
-      const terminalId =
-        leadId !== undefined && !terminalAgentIds.includes(focusId) ? leadId : focusId;
-      if (terminalAgentIds.includes(terminalId)) {
-        revealTerminal(terminalId);
-        if (isMobile) showMobileTerminal();
-      }
-    },
-    [terminalAgentIds, isMobile, revealTerminal, showMobileTerminal],
-  );
-
-  // Card click when there is no terminal pane to switch (VS Code, or a
-  // watch-only standalone session): ask the host to raise the agent's own
-  // terminal — VS Code shows the editor terminal, standalone has nothing to
-  // show — and select its character so the office follows the click.
   const handleCardSelect = useCallback((agentId: number) => {
     transport.send({ type: 'focusAgent', id: agentId });
     getOfficeState().selectAndFollow(agentId);
@@ -463,18 +363,12 @@ function App() {
     return <div className="w-full h-full flex items-center justify-center ">Loading...</div>;
   }
 
-  // The office region is shared by both shells: desktop mounts it as the
-  // flexing left half of the split view (the terminal panel docks beside it);
-  // mobile mounts it as the first page of the sliding track. containerRef
-  // (ToolOverlay geometry) rides along either way.
+  // Office canvas region. containerRef also drives ToolOverlay geometry.
   const officeRegion = (
-    <div
-      ref={containerRef}
-      className={`relative h-full overflow-hidden ${isMobile ? 'w-full' : 'flex-1 min-w-0'}`}
-    >
+    <div ref={containerRef} className="relative h-full flex-1 min-w-0 overflow-hidden">
       <OfficeCanvas
         officeState={officeState}
-        onClick={handleClick}
+        onClick={handleCardSelect}
         isEditMode={editor.isEditMode}
         editorState={editorState}
         onEditorTileAction={editor.handleEditorTileAction}
@@ -489,14 +383,14 @@ function App() {
         panRef={editor.panRef}
         showAreas={effectiveShowAreas}
         activeAreaLabel={activeAreaLabel}
-        tapSelectsFirst={isMobile}
+        tapSelectsFirst={false}
       />
 
       {!isDebugMode ? (
         <>
           {/* Mobile: pinch replaces the zoom buttons, and the toolbar's
                 jobs move to the card bar (+) and the floating Settings button. */}
-          {!isMobile && <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />}
+          <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />
 
           {/* Vignette overlay */}
           <div
@@ -593,35 +487,6 @@ function App() {
         />
       )}
 
-      {/* Hooks first-run tooltip. Gated on hooksInstalled (the hooksStatus
-          message), NOT the hooksEnabled preference: hooksEnabled defaults true
-          while first-run consent is still pending, and announcing "Instant
-          Detection Active" before anything is installed would be a lie. */}
-      {hooksEnabled && claudeHooksInstalled && !hooksInfoShown && !hooksTooltipDismissed && (
-        <Tooltip
-          title="Instant Detection Active"
-          position="top-right"
-          onDismiss={() => {
-            setHooksTooltipDismissed(true);
-            transport.send({ type: 'setHooksInfoShown' });
-          }}
-        >
-          <span className="text-sm text-text leading-none">
-            Your agents now respond in real-time.{' '}
-            <span
-              className="text-accent cursor-pointer underline"
-              onClick={() => {
-                setIsHooksInfoOpen(true);
-                setHooksTooltipDismissed(true);
-                transport.send({ type: 'setHooksInfoShown' });
-              }}
-            >
-              View more
-            </span>
-          </span>
-        </Tooltip>
-      )}
-
       {officeReadOnly && (
         <div className="absolute mobile-safe-top left-1/2 -translate-x-1/2 z-10 text-sm text-text-muted pointer-events-none select-none whitespace-nowrap">
           View only
@@ -630,33 +495,13 @@ function App() {
 
       {/* A read-only office gets no toolbar: launching, layout editing and every
           setting would be refused by the server anyway. */}
-      {!isMobile && !officeReadOnly && (
+      {!officeReadOnly && (
         <BottomToolbar
           isEditMode={editor.isEditMode}
           onToggleEditMode={editor.handleToggleEditMode}
           isSettingsOpen={isSettingsOpen}
           onToggleSettings={() => setIsSettingsOpen((v) => !v)}
-          directories={directories}
-          onAddDirectory={directoryEditor.add}
-          onEditDirectory={directoryEditor.edit}
-          terminalAvailable={terminalAvailable}
-          terminalUnavailableReason={terminalUnavailableReason}
         />
-      )}
-
-      {/* Mobile: Settings floats top-left (the layout editor stays desktop-
-            only — its tools are drag/hover-driven). */}
-      {isMobile && !isDebugMode && !officeReadOnly && (
-        <div className="absolute mobile-safe-top left-8 z-20">
-          <Button
-            size="sm"
-            variant={isSettingsOpen ? 'active' : 'default'}
-            className="border-border! shadow-pixel"
-            onClick={() => setIsSettingsOpen((v) => !v)}
-          >
-            Settings
-          </Button>
-        </div>
       )}
 
       <VersionIndicator
@@ -667,134 +512,24 @@ function App() {
         onOpenChangelog={handleOpenChangelog}
       />
 
-      {intro && (
-        <IntroBubble
-          officeState={officeState}
-          headline={intro.headline}
-          disclosure={intro.disclosure}
-          containerRef={containerRef}
-          zoom={editor.zoom}
-          panRef={editor.panRef}
-          installFailed={installFailed}
-          installPending={installPending}
-          onChoice={handleConsentChoice}
-          onClose={handleIntroClose}
-          escapeSuppressed={
-            isSettingsOpen ||
-            isChangelogOpen ||
-            isHooksInfoOpen ||
-            showMigrationNotice ||
-            editor.isEditMode
-          }
-        />
-      )}
-
       <ConnectionIndicator />
     </div>
   );
 
   return (
-    // Desktop: split view — the office region flexes to fill the space left of
-    // the terminal panel. Mobile: a column — the sliding office/terminal track
-    // on top, the agent-card bar pinned along the bottom.
-    <div
-      className={`w-full h-full relative overflow-hidden flex ${isMobile ? 'flex-col' : ''}`}
-      style={
-        isMobile && keyboard.clampHeight !== null ? { height: keyboard.clampHeight } : undefined
-      }
-    >
-      {isMobile ? (
-        <MobileShell
-          office={officeRegion}
-          shell={mobileShell}
-          drawer={terminalDrawer}
+    <div className="w-full h-full relative overflow-hidden flex">
+      {officeRegion}
+      {!isDebugMode && (
+        <AgentCardBar
           agentIds={agents}
-          terminalAgentIds={terminalAgentIds}
           focusedAgentId={focusedAgentId}
-          terminalAvailable={terminalAvailable}
-          terminalUnavailableReason={terminalUnavailableReason}
-          directories={directories}
-          onAddDirectory={directoryEditor.add}
-          onEditDirectory={directoryEditor.edit}
-          onCloseAgent={handleCloseAgent}
-          keyboardOpen={keyboard.keyboardOpen}
+          getAppearance={(id) => getOfficeState().characters.get(id) ?? { palette: 0, hueShift: 0 }}
+          statusFor={() => null}
+          onSelect={handleCardSelect}
+          onClose={handleCloseAgent}
         />
-      ) : (
-        <>
-          {officeRegion}
-
-          {/* Standalone with a terminal: terminalAvailable is only ever true when
-              the server reports a working PTY to a tokened session, which VS
-              Code's surface never does. In flow as a flex sibling so the office
-              region reflows beside it instead of being overlaid.
-
-              Otherwise (VS Code, or a watch-only standalone session) the card
-              bar stands alone with every agent in the office, external sessions
-              included — the at-a-glance "who needs attention" strip, with a
-              click raising the agent's editor terminal where there is one. */}
-          {terminalAvailable ? (
-            <TerminalDrawer
-              agentIds={terminalAgentIds}
-              shownAgentId={terminalDrawer.shownAgentId}
-              onSelectAgent={terminalDrawer.select}
-              onCloseAgent={handleCloseAgent}
-              isOpen={terminalDrawer.isOpen}
-              onClosePanel={terminalDrawer.close}
-              widthPx={terminalDrawer.widthPx}
-              onResizeStart={terminalDrawer.onResizeStart}
-              getAppearance={terminalDrawer.getAppearance}
-              statusFor={terminalDrawer.statusFor}
-              onStatusChange={terminalDrawer.onStatusChange}
-            />
-          ) : (
-            !isDebugMode && (
-              <AgentCardBar
-                agentIds={agents}
-                focusedAgentId={focusedAgentId}
-                getAppearance={terminalDrawer.getAppearance}
-                statusFor={terminalDrawer.statusFor}
-                onSelect={handleCardSelect}
-                onClose={handleCloseAgent}
-              />
-            )
-          )}
-        </>
       )}
 
-      {/* Hooks info modal. Top level, beside the other modals: inside the
-          office region it would sit in the mobile shell's transformed track,
-          and a transformed ancestor is the containing block of position:
-          fixed — the modal would size to the 200%-wide track. */}
-      <Modal
-        isOpen={isHooksInfoOpen}
-        onClose={() => setIsHooksInfoOpen(false)}
-        title="Instant Detection is ON"
-        zIndex={52}
-      >
-        <div className="text-base text-text px-10" style={{ lineHeight: 1.4 }}>
-          <p className="mb-8">Your Pixel Agents office now reacts in real-time:</p>
-          <ul className="mb-8 pl-18 list-disc m-0">
-            <li className="text-sm mb-2">Permission prompts appear instantly</li>
-            <li className="text-sm mb-2">Turn completions detected the moment they happen</li>
-            <li className="text-sm mb-2">Sound notifications play immediately</li>
-          </ul>
-          <p className="mb-12 text-text-muted">
-            This works through Claude Code Hooks, small event listeners that notify Pixel Agents
-            whenever something happens in your Claude sessions.
-          </p>
-          <div className="text-center">
-            <button
-              onClick={() => setIsHooksInfoOpen(false)}
-              className="py-4 px-20 text-lg bg-accent text-white border-2 border-accent rounded-none cursor-pointer shadow-pixel"
-            >
-              Got it
-            </button>
-          </div>
-          <p className="mt-8 text-xs text-text-muted text-center">
-            To disable, go to Settings {'>'} Instant Detection
-          </p>
-        </div>
-      </Modal>
       {/* Rendered at the composition root, not inside a launch surface: the
           drawer that opens it lives in BottomToolbar on desktop and
           MobileAgentBar on mobile, and both close as soon as it appears. */}
@@ -831,23 +566,6 @@ function App() {
           const newVal = !watchAllSessions;
           setWatchAllSessions(newVal);
           transport.send({ type: 'setWatchAllSessions', enabled: newVal });
-        }}
-        hooksInstalled={claudeHooksInstalled}
-        onToggleHooksEnabled={() => {
-          // Toggle the DISPLAYED state (actual install), not the preference: when the two disagree — preference on,
-          // nothing installed while consent is pending — toggling the preference would turn hooks OFF for a user
-          // asking for ON. No optimistic local update either; both backends answer with the truthful hooksStatus this
-          // checkbox renders, so it lands correct instead of flickering when an install fails. The providerId is
-          // ECHOED from that row (never originated here), so nothing sends until the row has arrived.
-          const [rowProviderId] =
-            Object.entries(hooksInstalled).find(([id]) => id === 'claude') ?? [];
-          if (rowProviderId !== undefined) {
-            transport.send({
-              type: 'setHooksEnabled',
-              providerId: rowProviderId,
-              enabled: !claudeHooksInstalled,
-            });
-          }
         }}
         showAreas={showAreas}
         onToggleShowAreas={onToggleShowAreas}

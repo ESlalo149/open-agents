@@ -65,7 +65,6 @@ export const DIRECTORY_SUGGESTION_LIMIT = 10;
 // Centralized in core/src/constants.ts; re-exported here for back-compat.
 export {
   BASH_COMMAND_DISPLAY_MAX_LENGTH,
-  HOOK_API_PREFIX,
   HOOK_SCRIPTS_DIR,
   SERVER_JSON_DIR,
   SERVER_JSON_NAME,

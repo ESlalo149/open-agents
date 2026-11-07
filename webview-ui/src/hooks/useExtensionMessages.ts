@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { HooksConsentRequest } from '../../../core/src/messages.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
 import type { ExistingAgentMeta, PendingAgent } from '../office/engine/existingAgents.js';
 import { reconcileExistingAgents } from '../office/engine/existingAgents.js';
@@ -12,11 +11,7 @@ import { migrateLayoutColors } from '../office/layout/layoutSerializer.js';
 import { setCarpetSprites } from '../office/sprites/carpetTiles.js';
 import { setPetTemplates } from '../office/sprites/petSpriteData.js';
 import { setCharacterTemplates } from '../office/sprites/spriteData.js';
-import {
-  extractToolName,
-  isSubagentToolName,
-  setProviderCapabilities,
-} from '../office/toolUtils.js';
+import { extractToolName, isSubagentToolName } from '../office/toolUtils.js';
 import type { OfficeLayout, ToolActivity } from '../office/types.js';
 import { setWallSprites } from '../office/wallTiles.js';
 import { isBrowserRuntime, isE2E } from '../runtime.js';
@@ -121,22 +116,6 @@ interface ExtensionMessageState {
   alwaysShowLabels: boolean;
   ghostHeadlessAgents: boolean;
   setGhostHeadlessAgents: (v: boolean) => void;
-  hooksEnabled: boolean;
-  setHooksEnabled: (v: boolean) => void;
-  /** Actual install state per provider (hooksStatus messages) — absent/false
-   *  while first-run consent is pending, unlike hooksEnabled which defaults
-   *  true. Keyed by providerId; today's Settings checkbox reads 'claude'. */
-  hooksInstalled: Record<string, boolean>;
-  /** Bumped per provider on every hooksStatus message. `hooksInstalled` alone cannot say "the server answered": a
-   *  failed install re-reports the `false` already held, so no effect runs. The Intro needs the ARRIVAL to tell a
-   *  pending install from a failed one, per provider — A's status is never a verdict on B's install. */
-  hooksStatusSeq: Record<string, number>;
-  hooksInfoShown: boolean;
-  /** First-run consent ask (hooksConsentRequest). Non-null while the server waits on an answer; carries the provider
-   *  and the server's exact disclosure copy, so the consent step renders the terms being approved with no client
-   *  duplicate to drift. Cleared on answer/dismissal, and by a matching provider's hooksStatus installed=true. */
-  consentRequest: HooksConsentRequest | null;
-  dismissConsentRequest: (providerId: string | null) => void;
   // Areas
   areaMappings: Record<string, string[]>;
   setAreaMappings: (m: Record<string, string[]>) => void;
@@ -151,12 +130,6 @@ interface ExtensionMessageState {
   /** A read-only office (standalone without the server token): every change it
    *  sends is refused, so the UI hides the controls that would send one. */
   officeReadOnly: boolean;
-  // Terminal (standalone only; always false/empty under VS Code, which owns its
-  // own terminals and never sends these messages)
-  terminalAvailable: boolean;
-  terminalUnavailableReason: string | null;
-  /** Agent ids with a live server-side PTY, in the order they opened. */
-  terminalAgentIds: number[];
 }
 
 /** Drop one key from a keyed-by-agent record without touching identity when
@@ -205,27 +178,12 @@ export function useExtensionMessages(
   const [watchAllSessions, setWatchAllSessions] = useState(false);
   const [alwaysShowLabels, setAlwaysShowLabels] = useState(false);
   const [ghostHeadlessAgents, setGhostHeadlessAgentsState] = useState(false);
-  const [hooksEnabled, setHooksEnabled] = useState(true);
-  const [hooksInstalled, setHooksInstalled] = useState<Record<string, boolean>>({});
-  const [hooksStatusSeq, setHooksStatusSeq] = useState<Record<string, number>>({});
-  const [hooksInfoShown, setHooksInfoShown] = useState(true);
-  // FIFO of pending consent asks, at most one per provider (a re-ask replaces that provider's entry in place). The
-  // HEAD is what the Intro renders; answering, dismissing, or mooting it advances to the next provider's ask rather
-  // than dropping it — the server sends one request per provider on the same handshake.
-  const [consentQueue, setConsentQueue] = useState<HooksConsentRequest[]>([]);
-  const consentRequest = consentQueue[0] ?? null;
   const [areaMappings, setAreaMappings] = useState<Record<string, string[]>>({});
   const [showAreas, setShowAreas] = useState(false);
   const [bypassPermissions, setBypassPermissions] = useState(false);
   const [showHostDirectories, setShowHostDirectories] = useState(false);
   // Never sent under VS Code, so it stays false there.
   const [officeReadOnly, setOfficeReadOnly] = useState(false);
-  // Terminal control plane (standalone only; the server never sends these in
-  // VS Code mode, so terminalAvailable stays false and no terminal UI renders).
-  const [terminalAvailable, setTerminalAvailable] = useState(false);
-  const [terminalUnavailableReason, setTerminalUnavailableReason] = useState<string | null>(null);
-  /** Agent ids with a live PTY, in the order their terminals opened. */
-  const [terminalAgentIds, setTerminalAgentIds] = useState<number[]>([]);
 
   // The renderer keeps its own module-level copy (read every rAF frame), so both
   // sources of truth move together — the persisted value on settingsLoaded and
@@ -280,36 +238,8 @@ export function useExtensionMessages(
         });
       }
 
-      if (msg.type === 'providerCapabilities') {
-        setProviderCapabilities({
-          readingTools: msg.readingTools,
-          subagentToolNames: msg.subagentToolNames,
-        });
-        return;
-      }
-
       if (msg.type === 'officeAccess') {
         setOfficeReadOnly(msg.readOnly === true);
-        return;
-      }
-
-      if (msg.type === 'terminalAvailability') {
-        setTerminalAvailable(msg.available as boolean);
-        setTerminalUnavailableReason((msg.reason as string | undefined) ?? null);
-        return;
-      }
-
-      if (msg.type === 'terminalSessionOpened') {
-        // Deduped: webviewReady re-announces every live session so a reloaded
-        // client rebuilds its tabs, and that can race a live agentCreated.
-        const agentId = msg.agentId as number;
-        setTerminalAgentIds((prev) => (prev.includes(agentId) ? prev : [...prev, agentId]));
-        return;
-      }
-
-      if (msg.type === 'terminalSessionClosed') {
-        const agentId = msg.agentId as number;
-        setTerminalAgentIds((prev) => prev.filter((id) => id !== agentId));
         return;
       }
 
@@ -392,10 +322,6 @@ export function useExtensionMessages(
         const id = msg.id as number;
         setAgents((prev) => prev.filter((a) => a !== id));
         setSelectedAgent((prev) => (prev === id ? null : prev));
-        // Drop the drawer tab too. terminalSessionClosed normally does this, but
-        // an agent can be removed without its PTY ever reporting an exit (e.g.
-        // stale cleanup), and a tab for a gone agent would attach to nothing.
-        setTerminalAgentIds((prev) => prev.filter((a) => a !== id));
         setAgentTools((prev) => omitKey(prev, id));
         setAgentStatuses((prev) => omitKey(prev, id));
         setAgentAwaitingInput((prev) => omitKey(prev, id));
@@ -753,12 +679,6 @@ export function useExtensionMessages(
         if (typeof msg.ghostHeadlessAgents === 'boolean') {
           applyGhostHeadlessAgents(msg.ghostHeadlessAgents as boolean);
         }
-        if (typeof msg.hooksEnabled === 'boolean') {
-          setHooksEnabled(msg.hooksEnabled as boolean);
-        }
-        if (typeof msg.hooksInfoShown === 'boolean') {
-          setHooksInfoShown(msg.hooksInfoShown as boolean);
-        }
         if (typeof msg.showAreas === 'boolean') {
           setShowAreas(msg.showAreas as boolean);
         }
@@ -782,39 +702,6 @@ export function useExtensionMessages(
         // uses it, so the Settings toggle must show it.
         if (typeof msg.enabled === 'boolean') {
           setBypassPermissions(msg.enabled);
-        }
-      } else if (msg.type === 'hooksStatus') {
-        if (typeof msg.installed === 'boolean' && typeof msg.providerId === 'string') {
-          const providerId = msg.providerId as string;
-          const installed = msg.installed as boolean;
-          setHooksInstalled((m) => ({ ...m, [providerId]: installed }));
-          setHooksStatusSeq((m) => ({ ...m, [providerId]: (m[providerId] ?? 0) + 1 }));
-          if (installed) {
-            // Moot once THIS provider's hooks are installed — the Settings toggle or another tab granted consent
-            // while the dialog was open. Drop it from the queue (head or queued) rather than let a stale approval
-            // re-install; another provider's status is not about this ask.
-            setConsentQueue((q) => q.filter((r) => r.providerId !== providerId));
-          }
-        }
-      } else if (msg.type === 'hooksConsentRequest') {
-        if (
-          typeof msg.providerId === 'string' &&
-          typeof msg.headline === 'string' &&
-          typeof msg.disclosure === 'string'
-        ) {
-          const request: HooksConsentRequest = {
-            type: 'hooksConsentRequest',
-            providerId: msg.providerId as string,
-            headline: msg.headline as string,
-            disclosure: msg.disclosure as string,
-          };
-          setConsentQueue((q) => {
-            const i = q.findIndex((r) => r.providerId === request.providerId);
-            if (i === -1) return [...q, request];
-            const next = q.slice();
-            next[i] = request; // a re-ask carries the freshest copy
-            return next;
-          });
         }
       } else if (msg.type === 'externalAssetDirectoriesUpdated') {
         if (Array.isArray(msg.dirs)) {
@@ -892,23 +779,6 @@ export function useExtensionMessages(
     alwaysShowLabels,
     ghostHeadlessAgents,
     setGhostHeadlessAgents: applyGhostHeadlessAgents,
-    hooksEnabled,
-    hooksInstalled,
-    hooksStatusSeq,
-    setHooksEnabled,
-    hooksInfoShown,
-    consentRequest,
-    // Called when a tour ends (answer + Let's Go, the X, Escape) with the providerId that tour was ABOUT, removing
-    // that entry so the next provider's ask becomes the head. Keyed by id, not a blind shift: an answered ask's own
-    // installed:true moot may already have removed the head, and a shift would then drop the NEXT provider's ask
-    // unanswered. An aborted ask returns on the next connect; the queue never re-adds it here.
-    dismissConsentRequest: useCallback(
-      (providerId: string | null) =>
-        setConsentQueue((q) =>
-          providerId === null ? q.slice(1) : q.filter((r) => r.providerId !== providerId),
-        ),
-      [],
-    ),
     areaMappings,
     setAreaMappings,
     showAreas,
@@ -918,8 +788,5 @@ export function useExtensionMessages(
     showHostDirectories,
     setShowHostDirectories,
     officeReadOnly,
-    terminalAvailable,
-    terminalUnavailableReason,
-    terminalAgentIds,
   };
 }

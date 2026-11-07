@@ -9,6 +9,7 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   test: {
+    exclude: ['test/introTour.test.ts', '**/node_modules/**'],
     environment: 'node',
     include: ['test/*.test.ts'],
     testTimeout: 30_000,

@@ -1,0 +1,11 @@
+{
+  "name": "pixel-agents-opencode",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "@opencode/plugin": "2.2.6"
+  }
+}

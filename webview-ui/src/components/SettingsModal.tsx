@@ -21,12 +21,6 @@ interface SettingsModalProps {
   externalAssetDirectories: string[];
   watchAllSessions: boolean;
   onToggleWatchAllSessions: () => void;
-  /** ACTUAL install state (the hooksStatus message), not the hooksEnabled
-   *  preference. The preference defaults to true while first-run consent is
-   *  still pending, so binding the checkbox to it renders "on" over an empty
-   *  ~/.claude/settings.json. */
-  hooksInstalled: boolean;
-  onToggleHooksEnabled: () => void;
   /** Whether the areas overlay is rendered outside of the Areas edit tool. */
   showAreas: boolean;
   onToggleShowAreas: () => void;
@@ -56,8 +50,6 @@ export function SettingsModal({
   externalAssetDirectories,
   watchAllSessions,
   onToggleWatchAllSessions,
-  hooksInstalled,
-  onToggleHooksEnabled,
   showAreas,
   onToggleShowAreas,
   showAreasAvailable,
@@ -193,11 +185,6 @@ export function SettingsModal({
         label="Watch All Sessions"
         checked={watchAllSessions}
         onChange={onToggleWatchAllSessions}
-      />
-      <Checkbox
-        label="Instant Detection (Hooks)"
-        checked={hooksInstalled}
-        onChange={onToggleHooksEnabled}
       />
       <Checkbox
         label="Always Show Labels"

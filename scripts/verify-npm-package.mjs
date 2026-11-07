@@ -100,19 +100,6 @@ async function verifyInstalledTarball(tarballPath) {
   const smokeProject = path.join(smokeRoot, 'project');
   fs.mkdirSync(smokeHome, { recursive: true });
   fs.mkdirSync(smokeProject, { recursive: true });
-  // Without recorded consent the CLI (rightly) starts with no hooks installed
-  // — the first-run ask happens in the browser UI, which this smoke never
-  // opens — so the Hook ON assertion below would time out forever. Seeding
-  // consent in the throwaway smoke HOME intentionally bypasses the gate: this
-  // test verifies the install MACHINERY ships and works, not the gate (the
-  // gate's own behavior is pinned by server/__tests__/cli.test.ts,
-  // consentFlow.test.ts, and the consent e2e specs). Same shape as
-  // server/__tests__/cli.test.ts.
-  fs.mkdirSync(path.join(smokeHome, '.pixel-agents'), { recursive: true });
-  fs.writeFileSync(
-    path.join(smokeHome, '.pixel-agents', 'config.json'),
-    JSON.stringify({ hooksConsent: { claude: 'granted' } }),
-  );
   fs.writeFileSync(
     path.join(smokeProject, 'package.json'),
     JSON.stringify({ name: 'pixel-agents-package-smoke', private: true }, null, 2),
@@ -201,22 +188,6 @@ async function verifyInstalledTarball(tarballPath) {
       throw new Error(`Installed package did not load non-empty bundled assets:\n${output}`);
     }
 
-    const installedHook = path.join(smokeHome, '.pixel-agents', 'hooks', 'claude-hook.js');
-    const settingsPath = path.join(smokeHome, '.claude', 'settings.json');
-    await waitFor(
-      () => fs.existsSync(installedHook) && fs.existsSync(settingsPath),
-      'default Hook ON installation',
-    );
-    if (process.platform !== 'win32' && (fs.statSync(installedHook).mode & 0o100) === 0) {
-      throw new Error('Installed Claude hook script is not owner-executable');
-    }
-    const settingsText = fs.readFileSync(settingsPath, 'utf-8');
-    const normalizedSettings = settingsText.replaceAll('\\\\', '/');
-    const normalizedHookPath = installedHook.replaceAll(path.sep, '/');
-    if (!normalizedSettings.includes(normalizedHookPath)) {
-      throw new Error('Claude hook settings do not reference the installed hook script');
-    }
-
     return { assetCounts: counts.slice(1).map(Number), port };
   } finally {
     if (child) await stopChild(child);
@@ -265,7 +236,7 @@ async function main() {
           '| --- | --- | ---: | ---: | ---: | --- |',
           `| ${packed.id} | ${packed.filename} | ${packed.entryCount} | ${packed.size} bytes | ${packed.unpackedSize} bytes | \`${packed.integrity}\` |`,
           '',
-          `Smoke: ${smoke.assetCounts.join('/')} character/pet/furniture assets; HTTP/SPA/Hook ON passed.`,
+          `Smoke: ${smoke.assetCounts.join('/')} character/pet/furniture assets; HTTP/SPA passed.`,
           '',
         ].join('\n'),
       );

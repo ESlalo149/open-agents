@@ -1,16 +1,10 @@
-import * as crypto from 'crypto';
 import type { FastifyInstance } from 'fastify';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
-import type {
-  AssetCache,
-  ReloadAssetsSideEffect,
-  SetHooksEnabledSideEffect,
-} from './clientMessageHandler.js';
+import type { AssetCache, ReloadAssetsSideEffect } from './clientMessageHandler.js';
 import {
   SERVER_JSON_DIR,
   SERVER_JSON_NAME,
@@ -21,41 +15,34 @@ import { createHttpServer } from './httpServer.js';
 import type { ServerConfig, StandaloneAccess } from './serverConfig.js';
 import { isServerConfig, isServerTarget, sameStandaloneAccess } from './serverConfig.js';
 import { loadOrCreateStandaloneToken } from './serverToken.js';
-import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { normalizeHostname } from './wsAuth.js';
 
 export type { ServerConfig } from './serverConfig.js';
 
-/** Callback invoked when a hook event is received from a provider's hook script. */
-type HookEventCallback = (providerId: string, event: Record<string, unknown>) => void;
+type OpenCodeEventCallback = (event: Record<string, unknown>) => void;
 
 /**
- * Pixel Agents server: receives hook events, broadcasts state via WebSocket,
- * and optionally serves the SPA in standalone mode.
+ * Pixel Agents server: receives OpenCode events, broadcasts office state, and serves the SPA.
  *
  * Routes (via Fastify in httpServer.ts):
- * - `POST /api/hooks/:providerId` -- hook event (auth required, 64KB body limit)
+ * - `POST /api/opencode/events` -- OpenCode plugin event (auth required)
  * - `GET /api/health` -- health check (no auth)
  * - `GET /ws` -- WebSocket for real-time agent state (auth required)
  *
  * Discovery: writes `~/.pixel-agents/server.json` (legacy single-target pointer)
  * and `~/.pixel-agents/servers/<pid>-<port>.json` (multi-server registry entry)
  * with port, PID, auth token, and capability flags.
- * Multi-window / multi-surface: a second instance detects running servers via
- * the registry and reuses one only when it offers the same capability
- * (embedded reuses embedded, standalone reuses standalone) -- an embedded
- * VS Code server and a standalone `npx pixel-agents` server can run at once,
- * each owning its own registry entry, both reachable by hook fan-out.
+ * Multi-window: additional office clients reuse the running web server.
  */
 export class PixelAgentsServer {
   private app: FastifyInstance | null = null;
   private config: ServerConfig | null = null;
   private ownsServer = false;
-  private callback: HookEventCallback | null = null;
+  private openCodeCallback: OpenCodeEventCallback | null = null;
 
-  /** Register a callback for incoming hook events from any provider. */
-  onHookEvent(callback: HookEventCallback): void {
-    this.callback = callback;
+  /** Register a callback for authenticated events emitted by the OpenCode plugin. */
+  onOpenCodeEvent(callback: OpenCodeEventCallback): void {
+    this.openCodeCallback = callback;
   }
 
   /**
@@ -64,15 +51,11 @@ export class PixelAgentsServer {
    */
   async start(options?: {
     store?: AgentStateStore;
-    runtime?: AgentRuntime;
-    embedded?: boolean;
     host?: string;
     port?: number;
     staticDir?: string;
     assetCache?: AssetCache;
-    onSetHooksEnabled?: SetHooksEnabledSideEffect;
     onReloadAssets?: ReloadAssetsSideEffect;
-    ptyManager?: PtySessionManager;
     /** Extra privileged Host names (standalone; see wsAuth.privilegedHostnames). */
     allowedHosts?: readonly string[];
     /** Replace the persisted standalone token, revoking every URL that carried
@@ -80,16 +63,12 @@ export class PixelAgentsServer {
      *  would keep honouring the old token until it restarts. */
     rotateToken?: boolean;
   }): Promise<ServerConfig> {
-    const embedded = options?.embedded ?? true;
-    const wantsSpa = !embedded;
+    const wantsSpa = true;
     const host = options?.host ?? '127.0.0.1';
-    const standalone: StandaloneAccess | undefined = embedded
-      ? undefined
-      : {
-          terminal: options?.ptyManager?.enabled ?? false,
-          host,
-          allowedHosts: normalizedAllowedHosts(options?.allowedHosts ?? []),
-        };
+    const standalone: StandaloneAccess = {
+      host,
+      allowedHosts: normalizedAllowedHosts(options?.allowedHosts ?? []),
+    };
 
     // Capability-based reuse: an embedded (VS Code) caller only reuses another
     // embedded server (today's multi-window sharing); a standalone caller only
@@ -101,7 +80,7 @@ export class PixelAgentsServer {
     // dead entries first so a crashed server's stale file never blocks
     // discovery of a live one.
     const registry = this.readAndPruneRegistry();
-    if (options?.rotateToken && !embedded) {
+    if (options?.rotateToken) {
       const running = registry.find((e) => e.servesSpa);
       if (running) {
         throw new Error(
@@ -116,33 +95,24 @@ export class PixelAgentsServer {
       this.config = candidate;
       this.ownsServer = false;
       console.log(
-        `[Pixel Agents] Reusing existing ${wantsSpa ? 'standalone' : 'embedded'} server on port ${candidate.port} (PID ${candidate.pid})`,
+        `[Pixel Agents] Reusing existing server on port ${candidate.port} (PID ${candidate.pid})`,
       );
       return candidate;
     }
 
-    // Start our own server
-    // Standalone keeps one token across restarts so the tokened URL the CLI
-    // prints stays valid; embedded hands its token to the webview in-process and
-    // gains nothing from persistence.
-    const token = embedded
-      ? crypto.randomUUID()
-      : loadOrCreateStandaloneToken({ rotate: options?.rotateToken ?? false });
+    // Keep the token stable across restarts so bookmarked URLs remain valid.
+    const token = loadOrCreateStandaloneToken({ rotate: options?.rotateToken ?? false });
     const store = options?.store;
 
     const { app, port } = await createHttpServer({
-      embedded,
       host,
       port: options?.port,
       token,
       store: store!,
-      runtime: options?.runtime,
       staticDir: options?.staticDir,
       assetCache: options?.assetCache,
-      onHookEvent: (providerId, event) => this.callback?.(providerId, event),
-      onSetHooksEnabled: options?.onSetHooksEnabled,
+      onOpenCodeEvent: (event) => this.openCodeCallback?.(event),
       onReloadAssets: options?.onReloadAssets,
-      ptyManager: options?.ptyManager,
       allowedHosts: standalone?.allowedHosts,
     });
 
@@ -154,7 +124,7 @@ export class PixelAgentsServer {
       startedAt: Date.now(),
       servesSpa: wantsSpa,
       protocol: SERVER_REGISTRY_PROTOCOL_VERSION,
-      ...(standalone ? { standalone } : {}),
+      standalone,
       // Diagnostic-only: forward the debug-log path to the hook script via
       // server.json (env vars don't reach the spawned hook reliably).
       ...(process.env['PIXEL_AGENTS_DEBUG_LOG']

@@ -1,6 +1,5 @@
 import * as fs from 'fs';
 
-import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import {
   CONTEXT_SEED_TAIL_BYTES,
@@ -106,18 +105,12 @@ export function updateContextUsage(
   agent: AgentState,
   agents: AgentStateStore,
   record: unknown,
-  provider?: HookProvider | null,
 ): void {
   const tokens = extractContextTokens(record);
   if (tokens <= 0) return;
   const isSidechain = (record as TranscriptRecord | null)?.isSidechain === true;
   if (isSidechain && agent.sawMainChainUsage) return;
-  applyContextTokens(agentId, agent, agents, tokens, !isSidechain, windowFor(record, provider));
-}
-
-/** The provider's window for whichever model wrote this record. */
-function windowFor(record: unknown, provider?: HookProvider | null): number | undefined {
-  return provider?.contextWindowForModel?.((record as TranscriptRecord | null)?.message?.model);
+  applyContextTokens(agentId, agent, agents, tokens, !isSidechain, undefined);
 }
 
 /**
@@ -128,11 +121,7 @@ function windowFor(record: unknown, provider?: HookProvider | null): number | un
  * turn — an office full of idle agents would show nothing. Reading the last
  * chunk backwards finds the newest usage record without replaying history.
  */
-export function seedContextUsage(
-  agentId: number,
-  agents: AgentStateStore,
-  provider?: HookProvider | null,
-): void {
+export function seedContextUsage(agentId: number, agents: AgentStateStore): void {
   const agent = agents.get(agentId);
   if (!agent || agent.contextTokens > 0 || !agent.jsonlFile) return;
 
@@ -172,10 +161,10 @@ export function seedContextUsage(
     const tokens = extractContextTokens(record);
     if (tokens <= 0) continue;
     if ((record as TranscriptRecord).isSidechain === true) {
-      sidechain ??= { tokens, window: windowFor(record, provider) };
+      sidechain ??= { tokens, window: undefined };
       continue;
     }
-    applyContextTokens(agentId, agent, agents, tokens, true, windowFor(record, provider));
+    applyContextTokens(agentId, agent, agents, tokens, true, undefined);
     return;
   }
   if (sidechain) {

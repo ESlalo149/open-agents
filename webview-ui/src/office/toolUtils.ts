@@ -24,26 +24,13 @@ export function extractToolName(status: string): string | null {
 // Modules classifying tools (character animation, subagent creation gate) read
 // from here instead of hardcoding Claude-specific tool names.
 
-const providerCaps: {
-  readingTools: Set<string>;
-  subagentToolNames: Set<string>;
-} = {
-  readingTools: new Set(),
-  subagentToolNames: new Set(),
-};
-
-export function setProviderCapabilities(caps: {
-  readingTools: string[];
-  subagentToolNames: string[];
-}): void {
-  providerCaps.readingTools = new Set(caps.readingTools);
-  providerCaps.subagentToolNames = new Set(caps.subagentToolNames);
-}
+const READING_TOOLS = new Set(['read', 'glob', 'grep', 'webfetch', 'websearch']);
+const SUBAGENT_TOOLS = new Set(['task', 'subtask', 'agent', 'work']);
 
 export function isReadingToolName(name: string | null | undefined): boolean {
-  return typeof name === 'string' && providerCaps.readingTools.has(name);
+  return typeof name === 'string' && READING_TOOLS.has(name.toLowerCase());
 }
 
 export function isSubagentToolName(name: string | null | undefined): boolean {
-  return typeof name === 'string' && providerCaps.subagentToolNames.has(name);
+  return typeof name === 'string' && SUBAGENT_TOOLS.has(name.toLowerCase());
 }

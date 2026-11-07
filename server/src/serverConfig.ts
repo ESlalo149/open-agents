@@ -1,8 +1,6 @@
 import { MAX_PORT, MIN_PORT, SERVER_REGISTRY_PROTOCOL_VERSION } from './constants.js';
 
-/** Minimum fields the hook producer needs to contact a server. Kept separate
- *  from ServerConfig so the new hook script can still reach an old server via
- *  the legacy server.json record during the mixed-version compatibility window. */
+/** Minimum fields needed to contact a running server. */
 export interface ServerTarget {
   port: number;
   pid: number;
@@ -17,8 +15,6 @@ export interface ServerTarget {
  * `--host` would be silently ignored in favour of a server that has a shell.
  */
 export interface StandaloneAccess {
-  /** Whether the browser may launch agents and attach to their terminals. */
-  terminal: boolean;
   /** Bind address. */
   host: string;
   /** Normalized, sorted `--allowed-host` names. */
@@ -46,7 +42,6 @@ export function sameStandaloneAccess(
 ): boolean {
   if (running === undefined || wanted === undefined) return running === wanted;
   return (
-    running.terminal === wanted.terminal &&
     running.host === wanted.host &&
     running.allowedHosts.length === wanted.allowedHosts.length &&
     running.allowedHosts.every((h, i) => h === wanted.allowedHosts[i])

@@ -35,34 +35,6 @@ function copyAssets() {
 }
 
 /**
- * Bundle hook scripts (TypeScript) to dist/hooks via esbuild.
- * Produces a self-contained CJS file with shebang for Claude Code to execute.
- */
-function buildHooks() {
-  const entry = path.join(
-    __dirname,
-    'server',
-    'src',
-    'providers',
-    'hook',
-    'claude',
-    'hooks',
-    'claude-hook.ts',
-  );
-  if (!fs.existsSync(entry)) return;
-  require('esbuild').buildSync({
-    entryPoints: [entry],
-    bundle: true,
-    platform: 'node',
-    target: 'node18',
-    format: 'cjs',
-    outdir: path.join(__dirname, 'dist', 'hooks'),
-    banner: { js: '#!/usr/bin/env node' },
-  });
-  console.log('✓ Built hooks/ → dist/hooks/');
-}
-
-/**
  * @type {import('esbuild').Plugin}
  */
 const esbuildProblemMatcherPlugin = {
@@ -83,49 +55,23 @@ const esbuildProblemMatcherPlugin = {
 };
 
 async function main() {
-  const ctx = await esbuild.context({
-    entryPoints: ['adapters/vscode/extension.ts'],
-    bundle: true,
-    format: 'cjs',
-    minify: production,
-    sourcemap: !production,
-    sourcesContent: false,
-    platform: 'node',
-    outfile: 'dist/extension.js',
-    external: ['vscode'],
-    define: versionDefine,
-    logLevel: 'silent',
-    plugins: [
-      /* add to the end of plugins array */
-      esbuildProblemMatcherPlugin,
-    ],
-  });
   if (watch) {
+    const ctx = await esbuild.context({
+      entryPoints: ['server/src/cli.ts'],
+      bundle: true,
+      platform: 'node',
+      format: 'cjs',
+      outfile: 'dist/cli.js',
+      external: ['fastify', '@fastify/websocket', '@fastify/static', '@fastify/cors'],
+      define: versionDefine,
+      logLevel: 'silent',
+      plugins: [esbuildProblemMatcherPlugin],
+    });
     await ctx.watch();
-  } else {
-    await ctx.rebuild();
-    await ctx.dispose();
-    // Copy assets and hooks after build
-    copyAssets();
-    buildHooks();
-    await buildCli();
-    await buildUninstall();
+    return;
   }
-}
-
-/** Bundle the vscode:uninstall hook — plain Node, runs after extension removal. */
-async function buildUninstall() {
-  await esbuild.build({
-    entryPoints: ['adapters/vscode/uninstall.ts'],
-    bundle: true,
-    format: 'cjs',
-    minify: production,
-    sourcemap: false,
-    platform: 'node',
-    outfile: 'dist/uninstall.js',
-    define: versionDefine,
-    logLevel: 'silent',
-  });
+  copyAssets();
+  await buildCli();
 }
 
 /** Bundle the standalone CLI entry point. */

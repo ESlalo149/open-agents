@@ -8,7 +8,6 @@
  */
 
 export type ServerMessage =
-  | ProviderCapabilities
   | AgentCreated
   | AgentClosed
   | AgentSelected
@@ -35,22 +34,16 @@ export type ServerMessage =
   | OfficeAccess
   | SettingsLoaded
   | BypassPermissionsUpdated
-  | HooksStatus
-  | HooksConsentRequest
   | ExternalAssetDirectoriesUpdated
   | AreaMappingsLoaded
   | DirectoriesLoaded
   | DirectorySaved
   | DirectoryRejected
   | DirectorySuggestions
-  | TerminalAvailability
-  | TerminalSessionOpened
-  | TerminalSessionClosed
   | AgentDiagnostics;
 
 export type ClientMessage =
   | WebviewReady
-  | LaunchAgent
   | FocusAgent
   | CloseAgent
   | SaveAgentSeats
@@ -59,9 +52,6 @@ export type ClientMessage =
   | SetLastSeenVersion
   | SetAlwaysShowLabels
   | SetGhostHeadlessAgents
-  | SetHooksEnabled
-  | HooksConsentResponse
-  | SetHooksInfoShown
   | SetWatchAllSessions
   | ExportLayout
   | ImportLayout
@@ -76,12 +66,6 @@ export type ClientMessage =
   | RemoveDirectory
   | RequestDirectorySuggestions
   | RequestDiagnostics;
-
-export interface ProviderCapabilities {
-  type: 'providerCapabilities';
-  readingTools: string[];
-  subagentToolNames: string[];
-}
 
 export interface AgentCreated {
   type: 'agentCreated';
@@ -289,8 +273,6 @@ export interface SettingsLoaded {
   watchAllSessions: boolean;
   alwaysShowLabels: boolean;
   ghostHeadlessAgents: boolean;
-  hooksEnabled: boolean;
-  hooksInfoShown: boolean;
   externalAssetDirectories: string[];
   showAreas: boolean;
   bypassPermissions: boolean;
@@ -300,19 +282,6 @@ export interface SettingsLoaded {
 export interface BypassPermissionsUpdated {
   type: 'bypassPermissionsUpdated';
   enabled: boolean;
-}
-
-export interface HooksStatus {
-  type: 'hooksStatus';
-  providerId: string;
-  installed: boolean;
-}
-
-export interface HooksConsentRequest {
-  type: 'hooksConsentRequest';
-  providerId: string;
-  headline: string;
-  disclosure: string;
 }
 
 export interface ExternalAssetDirectoriesUpdated {
@@ -354,23 +323,6 @@ export interface DirectorySuggestions {
   paths: string[];
 }
 
-export interface TerminalAvailability {
-  type: 'terminalAvailability';
-  available: boolean;
-  reason?: string;
-}
-
-export interface TerminalSessionOpened {
-  type: 'terminalSessionOpened';
-  agentId: number;
-}
-
-export interface TerminalSessionClosed {
-  type: 'terminalSessionClosed';
-  agentId: number;
-  exitCode?: number;
-}
-
 export interface AgentDiagnostics {
   type: 'agentDiagnostics';
   agents: Record<string, any>[];
@@ -378,11 +330,6 @@ export interface AgentDiagnostics {
 
 export interface WebviewReady {
   type: 'webviewReady';
-}
-
-export interface LaunchAgent {
-  type: 'launchAgent';
-  directoryPath?: string;
 }
 
 export interface FocusAgent {
@@ -429,24 +376,6 @@ export interface SetAlwaysShowLabels {
 export interface SetGhostHeadlessAgents {
   type: 'setGhostHeadlessAgents';
   enabled: boolean;
-}
-
-export interface SetHooksEnabled {
-  type: 'setHooksEnabled';
-  providerId: string;
-  enabled: boolean;
-}
-
-export interface HooksConsentResponse {
-  type: 'hooksConsentResponse';
-  providerId: string;
-  choice: HooksConsentChoice;
-}
-
-export type HooksConsentChoice = 'install' | 'notNow' | 'never';
-
-export interface SetHooksInfoShown {
-  type: 'setHooksInfoShown';
 }
 
 export interface SetWatchAllSessions {

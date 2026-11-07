@@ -1,6 +1,5 @@
 import type { AgentStateStore } from './agentStateStore.js';
 import { PERMISSION_TIMER_DELAY_MS } from './constants.js';
-import { hasPromotedBackgroundAgent } from './teamUtils.js';
 import type { AgentState } from './types.js';
 
 export function clearAgentActivity(
@@ -41,7 +40,6 @@ export function clearAgentActivity(
   // Subtask sub-character. Skip tools whose spawn became its own character
   // (named background teammate) -- re-sending would spawn a ghost alongside it.
   for (const toolId of agent.backgroundAgentToolIds) {
-    if (hasPromotedBackgroundAgent(agentId, toolId, agents)) continue;
     const status = agent.activeToolStatuses.get(toolId);
     if (status) {
       agents.broadcast({
@@ -51,7 +49,6 @@ export function clearAgentActivity(
         status,
         toolName: agent.activeToolNames.get(toolId),
         runInBackground: true,
-        isTeammateSpawn: agent.teammateSpawnToolIds?.has(toolId) || undefined,
       });
     }
   }
