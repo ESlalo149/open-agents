@@ -8,6 +8,10 @@ import type { AgentStateStore } from './agentStateStore.js';
 import type { AssetCache, ReloadAssetsSideEffect } from './clientMessageHandler.js';
 import { handleClientMessage } from './clientMessageHandler.js';
 import { WS_CLOSE_FORBIDDEN_ORIGIN } from './constants.js';
+import { buildGlobalAgentRoster } from './globalAgentRoster.js';
+import type { AgentModelSelection } from './opencodeAgentProfiles.js';
+import { OpenCodeAgentProfiles } from './opencodeAgentProfiles.js';
+import { OpenCodeServiceClient } from './openCodeServiceClient.js';
 import type { AgentState } from './types.js';
 import {
   bearerTokenValid,
@@ -75,8 +79,13 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
       prefix: '/',
     });
     // HTML5 history fallback: serve index.html for unmatched routes
-    app.setNotFoundHandler((_req, reply) => {
-      reply.sendFile('index.html');
+    app.setNotFoundHandler((request, reply) => {
+      if (request.url.startsWith('/api/')) {
+        return reply
+          .code(404)
+          .send({ error: 'API route not found; restart or update the Pixel Agents server.' });
+      }
+      return reply.sendFile('index.html');
     });
   }
 
@@ -87,6 +96,7 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
 
   registerHealthRoute(app);
   registerOpenCodeEventRoute(app, options);
+  registerGlobalAgentRoutes(app, options);
   registerWebSocketRoute(app, options, allowedHostnames);
 
   // ── Listen ──────────────────────────────────────────────────
@@ -96,6 +106,205 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
   const port = typeof address === 'object' ? (address?.port ?? 0) : 0;
 
   return { app, port };
+}
+
+function registerGlobalAgentRoutes(app: FastifyInstance, options: HttpServerOptions): void {
+  const auth = { preHandler: bearerAuth(options.token) };
+  const profiles = new OpenCodeAgentProfiles();
+  const openCode = new OpenCodeServiceClient();
+
+  app.get('/api/global-agents', auth, async (_request, reply) => {
+    try {
+      await ensureDefaultAgentProfiles(profiles);
+      const profilesList = await profiles.list();
+      let agents: Awaited<ReturnType<OpenCodeServiceClient['listAgents']>> = [];
+      try {
+        agents = await openCode.listAgents();
+      } catch {
+        // Keep global profiles visible when the managed OpenCode service is offline.
+      }
+      return reply.send(buildGlobalAgentRoster(profilesList, agents));
+    } catch (error) {
+      return sendOpenCodeError(reply, error);
+    }
+  });
+
+  app.get('/api/global-agents/projects', auth, async (_request, reply) => {
+    try {
+      return reply.send(await openCode.listProjects());
+    } catch (error) {
+      return sendOpenCodeError(reply, error);
+    }
+  });
+
+  app.get('/api/global-agents/models', auth, async (_request, reply) => {
+    try {
+      const models = await openCode.listModels();
+      return reply.send(models.filter((model) => model.enabled && model.status !== 'deprecated'));
+    } catch (error) {
+      return sendOpenCodeError(reply, error);
+    }
+  });
+
+  app.put<{
+    Params: { id: string };
+    Body: { prompt?: unknown; description?: unknown; mode?: unknown; model?: unknown };
+  }>('/api/global-agents/:id', auth, async (request, reply) => {
+    const { prompt, description, mode, model } = request.body ?? {};
+    if (
+      typeof prompt !== 'string' ||
+      (description !== undefined && typeof description !== 'string') ||
+      (mode !== undefined && typeof mode !== 'string') ||
+      (model !== undefined && model !== null && !isAgentModelSelection(model))
+    ) {
+      return reply.code(400).send({ error: 'Invalid agent profile' });
+    }
+    try {
+      if (model) {
+        const [availableModel] = await openCode
+          .listModels()
+          .then((models) =>
+            models.filter(
+              (item) =>
+                item.enabled &&
+                item.status !== 'deprecated' &&
+                item.providerID === model.providerID &&
+                item.id === model.modelID,
+            ),
+          );
+        if (!availableModel)
+          return reply.code(400).send({ error: 'The selected model is not available in OpenCode' });
+        if (
+          model.variant &&
+          !availableModel.variants.some((variant) => variant.id === model.variant)
+        ) {
+          return reply
+            .code(400)
+            .send({ error: 'The selected variant is not available for this model' });
+        }
+      }
+      return reply.send(
+        await profiles.save({
+          id: request.params.id,
+          prompt,
+          description,
+          mode,
+          ...(model !== undefined ? { model: model as AgentModelSelection | null } : {}),
+        }),
+      );
+    } catch (error) {
+      return sendOpenCodeError(reply, error, 400);
+    }
+  });
+
+  app.delete<{ Params: { id: string } }>('/api/global-agents/:id', auth, async (request, reply) => {
+    try {
+      await profiles.remove(request.params.id);
+      return reply.code(204).send();
+    } catch (error) {
+      return sendOpenCodeError(reply, error, 400);
+    }
+  });
+
+  app.get<{ Querystring: { sessionId?: string; agentId?: string; directory?: string } }>(
+    '/api/global-agents/conversation',
+    auth,
+    async (request, reply) => {
+      const { sessionId, agentId, directory } = request.query;
+      if (!sessionId || !agentId || !directory) {
+        return reply.code(400).send({ error: 'sessionId, agentId, and directory are required' });
+      }
+      try {
+        return reply.send(await openCode.conversation(sessionId, agentId, directory));
+      } catch (error) {
+        return sendOpenCodeError(reply, error, 400);
+      }
+    },
+  );
+
+  app.delete<{ Querystring: { sessionId?: string; agentId?: string; directory?: string } }>(
+    '/api/global-agents/conversation',
+    auth,
+    async (request, reply) => {
+      const { sessionId, agentId, directory } = request.query;
+      if (!sessionId || !agentId || !directory) {
+        return reply.code(400).send({ error: 'sessionId, agentId, and directory are required' });
+      }
+      try {
+        await openCode.deleteConversation(sessionId, agentId, directory);
+        return reply.code(204).send();
+      } catch (error) {
+        return sendOpenCodeError(reply, error, 400);
+      }
+    },
+  );
+
+  app.post<{
+    Body: { agentId?: unknown; directory?: unknown; sessionId?: unknown; text?: unknown };
+  }>('/api/global-agents/chat', auth, async (request, reply) => {
+    const { agentId, directory, sessionId, text } = request.body ?? {};
+    if (
+      typeof agentId !== 'string' ||
+      typeof directory !== 'string' ||
+      typeof text !== 'string' ||
+      (sessionId !== undefined && typeof sessionId !== 'string')
+    ) {
+      return reply.code(400).send({ error: 'Invalid chat request' });
+    }
+    try {
+      return reply.send(await openCode.sendMessage({ agentId, directory, sessionId, text }));
+    } catch (error) {
+      return sendOpenCodeError(reply, error, 400);
+    }
+  });
+}
+
+function isAgentModelSelection(value: unknown): value is AgentModelSelection {
+  if (!value || typeof value !== 'object') return false;
+  const model = value as Record<string, unknown>;
+  return (
+    typeof model.providerID === 'string' &&
+    typeof model.modelID === 'string' &&
+    (model.variant === undefined || typeof model.variant === 'string')
+  );
+}
+
+async function ensureDefaultAgentProfiles(profiles: OpenCodeAgentProfiles): Promise<void> {
+  const existing = new Set((await profiles.list()).map((profile) => profile.id));
+  const defaults = [
+    {
+      id: 'qa',
+      description: 'Quality assurance specialist',
+      prompt:
+        'You are the QA specialist. Analyze requirements, identify risks and edge cases, design and run appropriate tests, and report findings with clear reproduction steps. Do not claim tests passed unless you ran them.',
+    },
+    {
+      id: 'architect',
+      description: 'Software architecture specialist',
+      prompt:
+        'You are the software architect. Understand the existing system before proposing changes. Focus on boundaries, compatibility, security, maintainability, and incremental delivery. Explain tradeoffs and avoid replacing established architecture without explicit approval.',
+    },
+    {
+      id: 'developer',
+      description: 'Implementation specialist',
+      prompt:
+        'You are the implementation specialist. Follow the repository conventions, make focused changes, preserve unrelated work, and run relevant checks. Explain assumptions and report exactly what changed and what remains unverified.',
+    },
+    {
+      id: 'representante',
+      description: 'Team representative and agent coordinator',
+      prompt:
+        'You are Representative, the team coordinator responsible for executing approved plans. The user plans with their primary assistant first and then gives you an approved plan. Treat that plan as the source of truth; do not rewrite it or expand its scope without authorization. Break the plan into concrete tasks. Delegate suitable work to QA, Architect, and Developer when available, integrate their findings, verify changes, and report progress, risks, and results clearly. If context is missing or a product decision is needed, ask before assuming. Respond in English by default. If the user explicitly asks you to respond in Spanish, do so.',
+    },
+  ];
+  for (const agent of defaults) {
+    if (!existing.has(agent.id)) await profiles.save({ ...agent, mode: 'subagent' });
+  }
+}
+
+function sendOpenCodeError(reply: FastifyReply, error: unknown, status = 503) {
+  const message = error instanceof Error ? error.message : 'OpenCode request failed';
+  return reply.code(status).send({ error: message });
 }
 
 // ── Health ──────────────────────────────────────────────────────

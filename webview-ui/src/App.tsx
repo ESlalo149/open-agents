@@ -8,6 +8,7 @@ import { ConnectionIndicator } from './components/ConnectionIndicator.js';
 import { DebugView } from './components/DebugView.js';
 import { DirectoryModal } from './components/DirectoryModal.js';
 import { EditActionBar } from './components/EditActionBar.js';
+import { type GlobalAgent, GlobalAgentPanel } from './components/GlobalAgentPanel.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
@@ -22,6 +23,7 @@ import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
 import { EditorToolbar } from './office/editor/EditorToolbar.js';
 import { OfficeState } from './office/engine/officeState.js';
+import { globalAgentAvatarId, isGlobalAgentAvatar } from './office/globalAgentIdentity.js';
 import { exportLayoutToFile } from './office/layout/exportLayout.js';
 import { isRotatable } from './office/layout/furnitureCatalog.js';
 import { migrateLayoutColors } from './office/layout/layoutSerializer.js';
@@ -61,6 +63,9 @@ function App() {
   }, []);
 
   const editor = useEditorActions(getOfficeState, editorState);
+  const [globalAgents, setGlobalAgents] = useState<GlobalAgent[]>([]);
+  const [, setGlobalAvatarRevision] = useState(0);
+  const globalAvatarIdsRef = useRef<Set<number>>(new Set());
 
   const isEditDirty = useCallback(
     () => editor.isEditMode && editor.isDirty,
@@ -257,15 +262,40 @@ function App() {
   );
 
   const handleCloseAgent = useCallback((id: number) => {
+    if (isGlobalAgentAvatar(id)) return;
     transport.send({ type: 'closeAgent', id });
   }, []);
 
   const handleCardSelect = useCallback((agentId: number) => {
-    transport.send({ type: 'focusAgent', id: agentId });
+    if (!isGlobalAgentAvatar(agentId)) transport.send({ type: 'focusAgent', id: agentId });
     getOfficeState().selectAndFollow(agentId);
   }, []);
 
   const officeState = getOfficeState();
+
+  // Permanent OpenCode profiles get office-only IDs and characters. They are
+  // intentionally separate from live session IDs, so idle profiles remain
+  // visible without being mistaken for running sessions or terminals.
+  useEffect(() => {
+    if (!layoutReady || !isBrowserRuntime) return;
+    const nextIds = new Set<number>();
+    for (const agent of globalAgents) {
+      const id = globalAgentAvatarId(agent.id);
+      nextIds.add(id);
+      if (!officeState.characters.has(id))
+        officeState.addAgent(id, undefined, undefined, undefined, true);
+      const character = officeState.characters.get(id);
+      if (character) {
+        character.agentName = agent.name;
+        character.isActive = false;
+      }
+    }
+    for (const id of globalAvatarIdsRef.current) {
+      if (!nextIds.has(id)) officeState.removeAgent(id);
+    }
+    globalAvatarIdsRef.current = nextIds;
+    setGlobalAvatarRevision((revision) => revision + 1);
+  }, [globalAgents, layoutReady, officeState]);
 
   // Merged set of Directories the Areas dropdown can map: host-contributed ones plus
   // every distinct Directory an agent has run in this session (deduped by name; name
@@ -519,14 +549,26 @@ function App() {
   return (
     <div className="w-full h-full relative overflow-hidden flex">
       {officeRegion}
+      {isBrowserRuntime && (
+        <GlobalAgentPanel
+          onAgentsChange={setGlobalAgents}
+          getAppearance={(agentId) => {
+            const character = getOfficeState().characters.get(globalAgentAvatarId(agentId));
+            return character
+              ? { palette: character.palette, hueShift: character.hueShift }
+              : { palette: 0, hueShift: 0 };
+          }}
+        />
+      )}
       {!isDebugMode && (
         <AgentCardBar
-          agentIds={agents}
+          agentIds={[...agents, ...globalAgents.map((agent) => globalAgentAvatarId(agent.id))]}
           focusedAgentId={focusedAgentId}
           getAppearance={(id) => getOfficeState().characters.get(id) ?? { palette: 0, hueShift: 0 }}
           statusFor={() => null}
           onSelect={handleCardSelect}
           onClose={handleCloseAgent}
+          canClose={(id) => !isGlobalAgentAvatar(id)}
         />
       )}
 

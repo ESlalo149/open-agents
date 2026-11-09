@@ -8,6 +8,9 @@ export default defineConfig({
     testTimeout: 10_000,
     include: [
       '__tests__/openCodeEvents.test.ts',
+      '__tests__/globalAgentRoster.test.ts',
+      '__tests__/openCodeServiceClient.test.ts',
+      '__tests__/opencodeAgentProfiles.test.ts',
       '__tests__/agentStateStore.test.ts',
       '__tests__/paletteAssigner.test.ts',
     ],

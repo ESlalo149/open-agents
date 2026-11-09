@@ -28,17 +28,30 @@ mode. This repository provides four project-local subagents in `.opencode/agents
 - `developer`: implements a clearly scoped task and focused tests.
 - `qa`: independently runs relevant checks and reports findings without editing.
 
-Ask the primary agent to use one by name, for example:
+Ask General Manager to delegate to one by name, for example:
 
 ```text
-Use the qa subagent to validate the current changes without editing files.
+Delegate to `qa` to validate the current changes without editing files.
 ```
 
-For a feature, delegate in stages when the work benefits from it: ask `architect`
-for a plan, optionally ask `designer` to assess UI work, have the primary agent
-orchestrate implementation (or delegate a bounded task to `developer`), then
-ask `qa` to validate the resulting diff. These are optional specialists, not a
-mandatory pipeline; use only the agents that add value to the task.
+### Team authority
+
+The user is the owner. Their planning assistant works with them to define and
+approve a plan, then hands the approved plan to the existing `representante`
+agent (displayed as **General Manager**), who is the team's general manager.
+General Manager is the sole default coordinator and delegates approved work to
+`architect`, `qa`, and `developer` as appropriate. The assistant must not assign
+those specialists directly unless the user explicitly requests it.
+
+Use the existing global agent profiles and General Manager conversation. Do not
+create separate top-level sessions or extra office characters to simulate team
+activity. To exercise the team UI, have General Manager delegate from its existing
+team session so the specialist sessions appear as its children in the office.
+
+Specialists are optional; General Manager should involve only those that add
+value to the approved task. `architect` can plan, `qa` can validate, and
+`developer` can implement a bounded assignment. The user remains the authority
+for scope changes and product decisions.
 
 OpenCode starts subagents in child sessions. The `session.created` event carries
 the child's `parentID`; the Pixel Agents bridge uses it to display the child as

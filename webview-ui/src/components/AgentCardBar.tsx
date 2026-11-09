@@ -14,6 +14,7 @@ interface AgentCardBarProps {
   statusFor: (agentId: number) => TabStatus | null;
   onSelect: (agentId: number) => void;
   onClose: (agentId: number) => void;
+  canClose?: (agentId: number) => boolean;
 }
 
 /**
@@ -38,6 +39,7 @@ export function AgentCardBar({
   statusFor,
   onSelect,
   onClose,
+  canClose = () => true,
 }: AgentCardBarProps) {
   if (agentIds.length === 0) return null;
 
@@ -50,6 +52,7 @@ export function AgentCardBar({
           variant={cardVariant(agentId, { activeId: null, focusedId: focusedAgentId })}
           appearance={getAppearance(agentId)}
           status={statusFor(agentId)}
+          showClose={canClose(agentId)}
           onSelect={onSelect}
           onClose={onClose}
         />

@@ -23,7 +23,6 @@ export function VersionIndicator({
 }: VersionIndicatorProps) {
   const [dismissed, setDismissed] = useState(false);
   const [fading, setFading] = useState(false);
-  const [labelHovered, setLabelHovered] = useState(false);
 
   const currentMajorMinor = toMajorMinor(currentVersion);
   const isUnseen = currentMajorMinor !== lastSeenVersion;
@@ -84,22 +83,10 @@ export function VersionIndicator({
           <span className="text-sm whitespace-nowrap">See what's new</span>
         </div>
       )}
-      {/* Hover tooltip — "See what's new" appears on label hover after notice is gone */}
-      {!showUpdateNotice && labelHovered && (
-        <div
-          onClick={handleOpenChangelog}
-          className="absolute bottom-42 right-28 z-20 pixel-panel py-6 px-12 cursor-pointer text-sm whitespace-nowrap"
-        >
-          See what's new!
-        </div>
-      )}
-      {/* Version label — always visible */}
+      {/* Version label — informational, not a changelog control */}
       <div
-        onMouseEnter={() => setLabelHovered(true)}
-        onMouseLeave={() => setLabelHovered(false)}
-        onClick={handleOpenChangelog}
-        className="absolute bottom-8 right-28 z-20 text-lg cursor-pointer select-none pr-2 transition-opacity duration-200"
-        style={{ opacity: labelHovered ? 0.8 : 0.4 }}
+        className="absolute bottom-8 right-28 z-20 text-lg select-none pr-2"
+        style={{ opacity: 0.4 }}
       >
         v{currentMajorMinor}
       </div>

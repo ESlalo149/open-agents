@@ -8,6 +8,21 @@ Before changing OpenCode integration behavior, verify compatibility against
 OpenCode 2.2.6 rather than assuming APIs from other versions. Keep all project
 files inside this repository.
 
+## Team authority and delegation
+
+- The user is the owner. The assistant in the user's planning conversation acts
+  as their personal assistant: plan with the user, get approval, and pass the
+  approved task to the General Manager.
+- General Manager (`representante`) is the team's manager and the only agent who
+  delegates work to Quality Assurance, Architect, or Developer by default.
+- Do not assign work directly to those specialist agents unless the user
+  explicitly asks for a direct assignment.
+- Use the existing team profiles and conversations. Do not create separate
+  agent sessions or office characters to simulate activity. For team activity,
+  ask the General Manager to delegate from its existing team session.
+- Preserve existing agent IDs and conversations when changing names or team
+  behavior.
+
 <!-- gitnexus:start -->
 
 # GitNexus — Code Intelligence
